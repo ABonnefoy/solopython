@@ -136,8 +136,8 @@ def tsid_control(filter=False, experiment=0):
     ########## PLOTS ##########          
     plotAll(controller, device, t_list, experiment, Kp, Kd)
     
-    device.saveAll(filename = "data/simu_%i_device_data_Kp%f_Kd%f" %(experiment, Kp, Kd))
-    controller.saveAll(filename = "data/simu_%i_tsid_data_Kp%f_Kd%f" %(experiment, Kp, Kd))
+    device.saveAll(filename = "../Results/Latest/data/simu_%i_device_data_Kp%f_Kd%f" %(experiment, Kp, Kd))
+    controller.saveAll(filename = "../Results/Latest/data/simu_%i_tsid_data_Kp%f_Kd%f" %(experiment, Kp, Kd))
     
     
     
@@ -145,8 +145,7 @@ def plotAll(controller, device, t_list, experiment, Kp, Kd):
 
     import matplotlib.pyplot as plt
     date_str = datetime.now().strftime('_%Y_%m_%d_%H_%M')
-    path = os.path.dirname(__file__) 
-    savefile = os.path.join(path, 'Images/')
+    savefile = '../Results/Latest/Images/'
     fontsize = 10
     frame_names = controller.frame_names
     
