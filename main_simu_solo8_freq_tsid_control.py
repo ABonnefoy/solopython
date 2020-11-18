@@ -31,8 +31,8 @@ def tsid_control(filter=False, experiment=0):
     DISPLAY_N = 25                    
     N_SIMULATION = 100000
     dof = 8
-    dt = 0.01
-    DT = 0.0001
+    dt = 0.001
+    DT = 0.0002
     ratio = dt/DT
 
     pybullet = True
@@ -61,8 +61,8 @@ def tsid_control(filter=False, experiment=0):
         device = Solo_Simu_Pybullet(dt=DT, logSize=N_SIMULATION)
 
     # PD
-    Kp = 6.0
-    Kd = 0.03
+    Kp = 0.0
+    Kd = 0.0
 
     nb_motors = device.nb_motors
         

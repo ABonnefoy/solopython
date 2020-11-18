@@ -28,8 +28,8 @@ DT = 0.001
 dof = 8
 
 # PD Gains
-kp = 3.0
-kd = 0.05
+kp = 0.2
+kd = 0.0
 
 
 def tsid_control(name_interface, experiment=0):
@@ -70,8 +70,8 @@ def tsid_control(name_interface, experiment=0):
 
      
         # Measured state
-        qmes = device.q_mes
-        vmes = device.v_mes  
+        qmes = device.q_mes.copy()
+        vmes = device.v_mes.copy()
 
         torque_FF, q_des, v_des = controller.low_level(qmes, vmes, i)
 
@@ -109,10 +109,10 @@ def tsid_control(name_interface, experiment=0):
     
     
     ########## PLOTS ##########          
-    plotAll(controller, log, t_list, experiment, Kp, Kd)
+    plotAll(controller, log, t_list, experiment, Kp[0], Kd[0])
     
-    log.saveAll(fileName = "../Results/Latest/data/expe_low_level_%i_logger_data_Kp%f_Kd%f" %(experiment, Kp, Kd))
-    controller.saveAll(filename = "../Results/Latest/data/expe_low_level_%i_controller_data_Kp%f_Kd%f" %(experiment, Kp, Kd))
+    log.saveAll(fileName = "../Results/Latest/data/expe_low_level_%i_logger_data_Kp%f_Kd%f" %(experiment, Kp[0], Kd[0]))
+    controller.saveAll(filename = "../Results/Latest/data/expe_low_level_%i_controller_data_Kp%f_Kd%f" %(experiment, Kp[0], Kd[0]))
     
     
     
@@ -169,7 +169,6 @@ def plotAll(controller, log, t_list, experiment, Kp, Kd):
             axes.set_ylabel('Velocity [rad/s]',fontsize = fontsize)
             axes.set_xlabel('Time [ms]', fontsize = fontsize)
     axes.set_xlabel('Time [ms]', fontsize = fontsize)
-    #plt.show()
     axes.legend(loc = 'lower right')
     plt.tight_layout(pad = 0.1, rect=[0, 0, 1, .92])
     plt.savefig(savefile + 'expe_low_level_%i_V_Kp%f_Kd%f' %(experiment, Kp, Kd) + date_str + '.svg')

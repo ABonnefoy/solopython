@@ -17,7 +17,7 @@ class Solo8(RobotHAL):
         self.maximumCurrent = 6.0  # A
         # To get this offsets, run the calibration with self.encoderOffsets at 0,
         # then manualy move the robot in zero config, and paste the position here (note the negative sign!)
-        self.encoderOffsets = - np.array([2.0888984203338623, -2.597313642501831, 2.772291660308838, 1.0124378204345703, -2.6765713691711426, 0.7007977962493896, 2.1985981464385986, 2.1340904235839844])
+        self.encoderOffsets = - np.array([1.764561414718628, -1.9062448740005493, 2.6938323974609375, 1.0126081705093384, -2.5847601890563965, 1.041310429573059, 1.9418796300888062, 2.2229063510894775])
         
         #self.encoderOffsets *= 0.
         self.rotateImuVectors = lambda x: [x[1], x[0], -x[2]]
