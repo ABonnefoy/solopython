@@ -33,9 +33,9 @@ class Freq_IK_Feet_Sinu_Control:
 
 
         # Posture Task         
-        self.w_posture = 1e-3
+        '''self.w_posture = 1e-3
         self.kp_posture = 10.0
-        self.level_posture = 1
+        self.level_posture = 1'''
  
         # SE3 Task         
         self.w_se3 = 1.0
@@ -49,6 +49,7 @@ class Freq_IK_Feet_Sinu_Control:
         self.time_error = False
         self.safety_controller = Safety_Control()
         self.tau_max = 3.0
+        self.security = 0.05      
         
         
         ########## ROBOT MODEL CREATION ##########
@@ -100,13 +101,13 @@ class Freq_IK_Feet_Sinu_Control:
         self.invdyn.computeProblemData(self.t, self.q, self.v)
         
         # Task definition
-        self.postureTask = tsid.TaskJointPosture("task-posture", self.robot)
+        '''self.postureTask = tsid.TaskJointPosture("task-posture", self.robot)
         self.postureTask.setKp(self.kp_posture * np.ones(self.dof)) 
         self.postureTask.setKd(2.0 * np.sqrt(self.kp_posture) * np.ones(self.dof))
         self.invdyn.addMotionTask(self.postureTask, self.w_posture, self.level_posture, 0.0)
         q_ref = self.q.copy() 
         self.trajPosture = tsid.TrajectoryEuclidianConstant("traj_joint", q_ref) # Goal = static
-        self.samplePosture = self.trajPosture.computeNext()
+        self.samplePosture = self.trajPosture.computeNext()'''
 
         self.se3Task = tsid.TaskSE3Equality("task-se3", self.robot, self.foot)
         self.se3Task.setKp(self.kp_se3 * np.ones(6))
@@ -189,13 +190,20 @@ class Freq_IK_Feet_Sinu_Control:
         self.y = self.sampleSE3.pos()
         self.q = self.q + np.linalg.pinv(J_foot) @ (self.y_prev - self.y)
 
-    def low_level(self, vmes, qmes, i):
+    def low_level(self, qmes, vmes, Kp, Kd, i):
+
+        for index in range(len(qmes)):
+            if self.error or (qmes[index]<-3.14) or (qmes[index]>3.14) or (vmes[index]<-30) or (vmes[index]>30): 
+                self.error = True
+                self.jointTorques = -self.security * vmes
+                self.t += self.DT
+                return(self.jointTorques, np.zeros(self.dof), np.zeros(self.dof), qmes, vmes)
      
         qa = self.q.copy()
         va = self.v.copy()
 
-        self.v = vmes.copy()
-        self.q = qmes.copy()  
+        '''self.v = vmes.copy()
+        self.q = qmes.copy()  '''
         
         # TSID computation        
 
@@ -204,8 +212,8 @@ class Freq_IK_Feet_Sinu_Control:
         self.sampleSE3.acc(np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t)))
         self.se3Task.setReference(self.sampleSE3)
 
-        self.samplePosture = self.trajPosture.computeNext()
-        self.postureTask.setReference(self.samplePosture)     
+        '''self.samplePosture = self.trajPosture.computeNext()
+        self.postureTask.setReference(self.samplePosture)    ''' 
 
         if i == 0:
             self.y = self.sampleSE3.pos()
@@ -233,7 +241,7 @@ class Freq_IK_Feet_Sinu_Control:
             
         self.t += self.DT
             
-        return(self.jointTorques, self.q, self.v)
+        return(self.jointTorques, Kp, Kd, self.q, self.v)
         
 
      

@@ -37,7 +37,7 @@ class Freq_TSID_Sinu_Control:
         self.freq_knee = freq_knee
 
         # Posture Task         
-        self.w_posture = 1.0
+        self.w_posture = 1e3
         self.kp_posture = 10.0
         self.level_posture = 1
         self.q_disp = np.zeros(self.dof)
@@ -48,6 +48,7 @@ class Freq_TSID_Sinu_Control:
         self.time_error = False
         self.safety_controller = Safety_Control()
         self.tau_max = 3.0
+        self.security = 0.05    
         
         
         ########## ROBOT MODEL CREATION ##########
@@ -63,16 +64,17 @@ class Freq_TSID_Sinu_Control:
         # Creation of the robot models
         self.robot = tsid.RobotWrapper(urdf, vector, False) # with tsid
         self.model = self.robot.model()
+        self.data = self.robot.data()
         robot_display = pin.RobotWrapper.BuildFromURDF(urdf, [path, ]) #with pinocchio
-        model_display = robot_display.model
-        self.frames = model_display.names
+        self.model_display = robot_display.model
+        self.data_display = robot_display.data
+        self.frames = self.model_display.names
         self.frame_names = [ name for i,name in enumerate(self.frames)] 
         
         # Reference configuration
-        pin.loadReferenceConfigurations(model_display, srdf)
-        self.q_init = model_display.referenceConfigurations["standing"]
-        
-        
+        pin.loadReferenceConfigurations(self.model_display, srdf)
+        self.q_init = self.model_display.referenceConfigurations["standing"]
+                
         if logSize is not None:
             self.tau_list = np.zeros((logSize,self.dof))
             self.jointTorques_list = np.zeros((logSize,self.dof))
@@ -124,6 +126,9 @@ class Freq_TSID_Sinu_Control:
             print ("QP problem could not be solved! Error code:", self.sol.status)
             self.error = True
         
+
+##### HIGH LEVEL CONTROL
+
     def compute(self, qmes, vmes, i):
         
         self.v = vmes.copy()
@@ -166,6 +171,47 @@ class Freq_TSID_Sinu_Control:
      
      
         return(self.jointTorques)
+
+
+##### LOW LEVEL CONTROL
+
+    def low_level(self, vmes, qmes, Kp, Kd, i):
+
+
+        for index in range(len(qmes)):
+            if self.error or (qmes[index]<-3.14) or (qmes[index]>3.14) or (vmes[index]<-30) or (vmes[index]>30): 
+                self.error = True
+                self.jointTorques = -self.security * vmes
+                self.t += self.DT
+                return(self.jointTorques, np.zeros(self.dof), np.zeros(self.dof), qmes, vmes)
+     
+        '''self.v = vmes.copy()
+        self.q = qmes.copy()  '''
+    
+
+        # TSID computation
+        self.samplePosture.pos(self.offset + np.multiply(self.amp, np.sin(self.two_pi_f*self.t)))
+        self.samplePosture.vel(np.multiply(self.two_pi_f_amp, np.cos(self.two_pi_f*self.t)))
+        self.samplePosture.acc(np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t)))
+        self.postureTask.setReference(self.samplePosture)        
+        
+        HQPData = self.invdyn.computeProblemData(self.t, self.q, self.v)     
+        self.sol = self.solver.solve(HQPData)
+        if(self.sol.status!=0):
+            print ("QP problem could not be solved! Error code:", self.sol.status)
+            self.error = True
+
+        pin.framesForwardKinematics(self.model, self.data, qmes)
+
+        self.dv = self.invdyn.getAccelerations(self.sol)
+        self.v += self.dv * self.DT
+        self.q = pin.integrate(self.model, self.q, self.v*self.DT)
+
+        self.jointTorques = self.invdyn.getActuatorForces(self.sol)
+            
+        self.t += self.DT
+            
+        return(self.jointTorques, Kp, Kd, self.q, self.v)
     
     def sample(self, i):
         self.jointTorques_list[i,:] = self.jointTorques[:]

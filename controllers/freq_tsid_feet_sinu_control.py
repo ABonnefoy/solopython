@@ -49,7 +49,7 @@ class Freq_TSID_Feet_Sinu_Control:
         self.time_error = False
         self.safety_controller = Safety_Control()
         self.tau_max = 3.0
-        
+        self.security = 0.05        
         
         ########## ROBOT MODEL CREATION ##########
     
@@ -100,13 +100,13 @@ class Freq_TSID_Feet_Sinu_Control:
         self.invdyn.computeProblemData(self.t, self.q, self.v)
         
         # Task definition
-        self.postureTask = tsid.TaskJointPosture("task-posture", self.robot)
+        '''self.postureTask = tsid.TaskJointPosture("task-posture", self.robot)
         self.postureTask.setKp(self.kp_posture * np.ones(self.dof)) 
         self.postureTask.setKd(2.0 * np.sqrt(self.kp_posture) * np.ones(self.dof))
         self.invdyn.addMotionTask(self.postureTask, self.w_posture, self.level_posture, 0.0)
         q_ref = self.q.copy() 
         self.trajPosture = tsid.TrajectoryEuclidianConstant("traj_joint", q_ref) # Goal = static
-        self.samplePosture = self.trajPosture.computeNext()
+        self.samplePosture = self.trajPosture.computeNext()'''
 
         self.se3Task = tsid.TaskSE3Equality("task-se3", self.robot, self.foot)
         self.se3Task.setKp(self.kp_se3 * np.ones(6))
@@ -140,38 +140,20 @@ class Freq_TSID_Feet_Sinu_Control:
             print ("QP problem could not be solved! Error code:", self.sol.status)
             self.error = True
         
-    def compute(self, qmes, vmes, i):
-        
-        self.v = vmes.copy()
-        self.q = qmes.copy()  
-        
-        # TSID computation        
 
-        self.sampleSE3.pos(self.offset + np.multiply(self.amp, np.sin(self.two_pi_f*self.t)))
-        self.sampleSE3.vel(np.multiply(self.two_pi_f_amp, np.cos(self.two_pi_f*self.t)))
-        self.sampleSE3.acc(np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t)))
-        self.se3Task.setReference(self.sampleSE3)
 
-        self.samplePosture = self.trajPosture.computeNext()
-        self.postureTask.setReference(self.samplePosture)     
- 
-        
-        HQPData = self.invdyn.computeProblemData(self.t, self.q, self.v)     
-        self.sol = self.solver.solve(HQPData)
-        if(self.sol.status!=0):
-            print ("QP problem could not be solved! Error code:", self.sol.status)
-            self.error = True
+    def low_level(self, vmes, qmes, Kp, Kd, i):
 
-        pin.framesForwardKinematics(self.model, self.data, qmes)
 
-        self.dv = self.invdyn.getAccelerations(self.sol)
-        self.v += self.dv * self.DT
-        self.q = pin.integrate(self.model, self.q, self.v*self.DT)
-
-    def low_level(self, vmes, qmes, i):
+        for index in range(len(qmes)):
+            if self.error or (qmes[index]<-3.14) or (qmes[index]>3.14) or (vmes[index]<-30) or (vmes[index]>30): 
+                self.error = True
+                self.jointTorques = -self.security * vmes
+                self.t += self.DT
+                return(self.jointTorques, np.zeros(self.dof), np.zeros(self.dof), qmes, vmes)
      
-        self.v = vmes.copy()
-        self.q = qmes.copy()  
+        '''self.v = vmes.copy()
+        self.q = qmes.copy()  '''
         
         # TSID computation        
 
@@ -180,8 +162,8 @@ class Freq_TSID_Feet_Sinu_Control:
         self.sampleSE3.acc(np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t)))
         self.se3Task.setReference(self.sampleSE3)
 
-        self.samplePosture = self.trajPosture.computeNext()
-        self.postureTask.setReference(self.samplePosture)     
+        '''self.samplePosture = self.trajPosture.computeNext()
+        self.postureTask.setReference(self.samplePosture)    ''' 
  
         
         HQPData = self.invdyn.computeProblemData(self.t, self.q, self.v)     
@@ -195,12 +177,12 @@ class Freq_TSID_Feet_Sinu_Control:
         self.dv = self.invdyn.getAccelerations(self.sol)
         self.v += self.dv * self.DT
         self.q = pin.integrate(self.model, self.q, self.v*self.DT)
-  
+
         self.jointTorques = self.invdyn.getActuatorForces(self.sol)
             
         self.t += self.DT
             
-        return(self.jointTorques, self.q, self.v)
+        return(self.jointTorques, Kp, Kd, self.q, self.v)
      
     def control(self, qmes, vmes, i, Kp, Kd):
 

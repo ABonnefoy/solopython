@@ -11,8 +11,8 @@ from datetime import datetime as datetime
 import sys
 import os
 
-from solo_simu_pybullet import Solo_Simu_Pybullet
-from solo_simu import Solo_Simu
+from simulators.solo_simu_pybullet import Solo_Simu_Pybullet
+from simulators.solo_simu import Solo_Simu
 
 from controllers.safety_control import Safety_Control
 
@@ -29,48 +29,51 @@ def tsid_control(filter=False, experiment=0):
     # Simulation 
     PRINT_N = 500                     
     DISPLAY_N = 25                    
-    N_SIMULATION = 100000
+    N_SIMULATION = 10000
     dof = 8
     dt = 0.01
-    DT = 0.0001
+    DT = 0.0002
     ratio = dt/DT
 
     pybullet = True
 
     if experiment==1:
-        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = DT, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.0, amp_knee = 0.0)
+        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = dt, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.0, amp_knee = 0.0)
         device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
     if experiment==2:
-        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = DT, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.5, amp_knee = 0.6)
+        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = dt, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.5, amp_knee = 0.6)
         device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
     if experiment==3:
-        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = DT, freq_hip = 0.5, amp_hip = 0.4, freq_knee = 0.5, amp_knee = 0.6)
+        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = dt, freq_hip = 0.5, amp_hip = 0.4, freq_knee = 0.5, amp_knee = 0.6)
         device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
     if experiment==4:
-        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = DT)
+        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt)
         device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
     if experiment==5:
-        controller = Freq_IK_Feet_Sinu_Control(logSize=N_SIMULATION, dt = DT)
+        controller = Freq_IK_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt)
         device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
 
     if experiment==6:
-        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = DT)
+        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt)
         device = Solo_Simu_Pybullet(dt=DT, logSize=N_SIMULATION)
     if experiment==7:
-        controller = Freq_IK_Feet_Sinu_Control(logSize=N_SIMULATION, dt = DT)
+        controller = Freq_IK_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt)
         device = Solo_Simu_Pybullet(dt=DT, logSize=N_SIMULATION)
 
-    # PD
-    Kp = 6.0
-    Kd = 0.03
-
     nb_motors = device.nb_motors
+
+    # PD
+    Kp = 1.0 * np.ones(nb_motors)
+    Kd = 0.005 * np.ones(nb_motors)
         
     device.Init(q_init=controller.q_init.copy())
     
     qmes = device.q_mes.copy()
     vmes = device.v_mes.copy()
     vmes_prev = np.zeros(dof)   
+
+    '''qmoy = np.zeros(nb_motors)
+    vmoy = np.zeros(nb_motors)'''
     
     q_prev = np.zeros(8)
     v_prev = np.zeros(8)
@@ -92,31 +95,25 @@ def tsid_control(filter=False, experiment=0):
      
         # Measured state
         qmes = device.q_mes
-        vmes = device.v_mes
+        vmes = device.v_mes  
 
-        """q_prev += qmes
-        v_prev += vmes
-        i_prev += 1"""
-          
+        '''qmoy += qmes
+        vmoy += vmes'''
 
-        # If different frequency for controller
-        if i%ratio == 0:
-            """qmoy = q_prev/i_prev
-            vmoy = v_prev/i_prev
+        if i % ratio == 0:
+            '''qmoy = qmoy/ratio
+            vmoy = vmoy/ratio'''
 
-            controller.compute(qmoy, vmoy, i)
+            torque_FF, Kp, Kd, q_des, v_des = controller.low_level(qmes, vmes, Kp, Kd, i)
+            device.SetDesiredJointTorque(torque_FF)        
+            device.SetDesiredJointPDgains(Kp, Kd)
+            device.SetDesiredJointPosition(q_des)
+            device.SetDesiredJointVelocity(v_des)
 
-            q_prev = qmes.copy()
-            v_prev = vmes.copy()
-            i_prev = 1 """
+            '''qmoy = np.zeros(nb_motors)
+            vmoy = np.zeros(nb_motors)'''
 
-            controller.compute(qmes, vmes, i)
-
-
-        jointTorques = controller.control(qmes, vmes, i, Kp, Kd)
-
-        device.runSimulation(jointTorques)
-        
+        device.SendCommand(WaitEndOfCycle=True)              
         
         
         # Variables update  
@@ -134,10 +131,10 @@ def tsid_control(filter=False, experiment=0):
         
     
     ########## PLOTS ##########          
-    plotAll(controller, device, t_list, experiment, Kp, Kd)
+    plotAll(controller, device, t_list, experiment, Kp[0], Kd[0])
     
-    device.saveAll(filename = "../Results/Latest/data/simu_%i_device_data_Kp%f_Kd%f" %(experiment, Kp, Kd))
-    controller.saveAll(filename = "../Results/Latest/data/simu_%i_tsid_data_Kp%f_Kd%f" %(experiment, Kp, Kd))
+    device.saveAll(filename = "../Results/Latest/data/simu_%i_device_data_Kp%f_Kd%f" %(experiment, Kp[0], Kd[0]))
+    controller.saveAll(filename = "../Results/Latest/data/simu_%i_tsid_data_Kp%f_Kd%f" %(experiment, Kp[0], Kd[0]))
     
     
     
