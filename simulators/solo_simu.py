@@ -7,6 +7,7 @@ Created on Tue Sep 29 15:02:15 2020
 import numpy as np
 import os
 from datetime import datetime as datetime
+from time import clock
 
 import pinocchio as pin
 import gepetto.corbaserver
@@ -17,7 +18,11 @@ class Solo_Simu:
         
         self.dt = dt
         self.dof = 8
+        self.last = 0
+        self.cpt = 0
+        self.t = 0
 
+        self.maximumTorque = 3.0
 
         # Robot creation
         path = os.path.dirname(__file__)
@@ -56,6 +61,48 @@ class Solo_Simu:
         self.q_mes = pin.integrate(self.model, self.q_mes, self.v_mes*self.dt) 
 
         self.robot.display(self.q_mes)
+
+    def SetDesiredJointTorque(self, torque_FF):
+        self.feedforwardTorque = torque_FF
+        for i in range(self.nb_motors):
+            if self.feedforwardTorque[i] > self.maximumTorque:
+                self.feedforwardTorque[i] = self.maximumTorque
+            elif self.feedforwardTorque[i] < -self.maximumTorque:
+                self.feedforwardTorque[i] = -self.maximumTorque
+
+    def SetDesiredJointPDgains(self, Kp, Kd):
+        self.Kp = Kp
+        self.Kd = Kd
+
+    def SetDesiredJointPosition(self, q_des):
+        self.q_des = q_des
+
+    def SetDesiredJointVelocity(self, v_des):
+        self.v_des = v_des
+
+    def SendCommand(self, WaitEndOfCycle=True):  
+        torque = np.array(self.Kp * (self.q_des - self.q_mes) + self.Kd * (self.v_des - self.v_mes) + self.feedforwardTorque)
+        self.jointTorques = np.clip(torque, -self.maximumTorque * np.ones(8), self.maximumTorque * np.ones(8))
+
+        self.a_mes = pin.aba(self.model, self.data, self.q_mes, self.v_mes, self.jointTorques)
+        self.v_mes += self.a_mes * self.dt
+        self.q_mes = pin.integrate(self.model, self.q_mes, self.v_mes*self.dt) 
+
+        self.robot.display(self.q_mes)
+        if WaitEndOfCycle:
+            self.WaitEndOfCycle()
+
+    def WaitEndOfCycle(self):
+        '''This Blocking fuction will wait for the end of timestep cycle (dt).'''
+        while(1):
+            if((clock() - self.last) >= self.dt):
+                self.last = clock()
+                self.cpt += 1
+                self.t += self.dt
+                return
+      
+
+
         
     def sample(self,i):
         self.q_mes_list[i,:] = self.q_mes[:].flat

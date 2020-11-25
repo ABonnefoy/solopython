@@ -9,6 +9,7 @@ import pybullet_data
 import numpy as np
 import os
 from datetime import datetime as datetime
+from time import clock
 
 class Solo_Simu_Pybullet:
     
@@ -16,6 +17,11 @@ class Solo_Simu_Pybullet:
         
         self.dt = dt
         self.dof = 8
+        self.last = 0
+        self.cpt = 0
+        self.t = 0
+
+        self.maximumTorque = 3.0
         
         # Start the client for PyBullet
         physicsClient = pyb.connect(pyb.GUI) # or p.DIRECT for non-graphical version
@@ -74,6 +80,46 @@ class Solo_Simu_Pybullet:
         jointStates = pyb.getJointStates(self.robotId, self.revoluteJointIndices)
         self.q_mes = np.array([jointStates[i_joint][0] for i_joint in range(len(jointStates))])
         self.v_mes = np.array([jointStates[i_joint][1] for i_joint in range(len(jointStates))]) 
+
+
+    def SetDesiredJointTorque(self, torque_FF):
+        self.feedforwardTorque = torque_FF
+        for i in range(self.nb_motors):
+            if self.feedforwardTorque[i] > self.maximumTorque:
+                self.feedforwardTorque[i] = self.maximumTorque
+            elif self.feedforwardTorque[i] < -self.maximumTorque:
+                self.feedforwardTorque[i] = -self.maximumTorque
+
+    def SetDesiredJointPDgains(self, Kp, Kd):
+        self.Kp = Kp
+        self.Kd = Kd
+
+    def SetDesiredJointPosition(self, q_des):
+        self.q_des = q_des
+
+    def SetDesiredJointVelocity(self, v_des):
+        self.v_des = v_des
+
+    def SendCommand(self, WaitEndOfCycle=True):  
+        torque = np.array(self.Kp * (self.q_des - self.q_mes) + self.Kd * (self.v_des - self.v_mes) + self.feedforwardTorque)
+        self.jointTorques = np.clip(torque, -self.maximumTorque * np.ones(8), self.maximumTorque * np.ones(8))
+        pyb.setJointMotorControlArray(self.robotId, self.revoluteJointIndices, controlMode=pyb.TORQUE_CONTROL, forces=self.jointTorques)
+        pyb.stepSimulation()
+        jointStates = pyb.getJointStates(self.robotId, self.revoluteJointIndices)
+        self.q_mes = np.array([jointStates[i_joint][0] for i_joint in range(len(jointStates))])
+        self.v_mes = np.array([jointStates[i_joint][1] for i_joint in range(len(jointStates))]) 
+        if WaitEndOfCycle:
+            self.WaitEndOfCycle()
+
+    def WaitEndOfCycle(self):
+        '''This Blocking fuction will wait for the end of timestep cycle (dt).'''
+        while(1):
+            if((clock() - self.last) >= self.dt):
+                self.last = clock()
+                self.cpt += 1
+                self.t += self.dt
+                return
+      
         
     def sample(self,i):
         self.q_mes_list[i,:] = self.q_mes[:].flat
