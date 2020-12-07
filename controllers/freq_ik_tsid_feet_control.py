@@ -17,10 +17,8 @@ from datetime import datetime as datetime
 import os
 import sys
 
-from controllers.safety_control import Safety_Control
 
-
-class Freq_TSID_Feet_Sinu_Control:
+class Freq_IK_TSID_Feet_Control:
     
     def __init__(self, logSize = None, dt = 0.001):
         
@@ -41,9 +39,9 @@ class Freq_TSID_Feet_Sinu_Control:
         self.error = False
         self.joint_error_list = []
         self.time_error = False
-        self.safety_controller = Safety_Control()
         self.tau_max = 3.0
-        self.security = 0.05        
+        self.security = 0.05      
+        
         
         ########## ROBOT MODEL CREATION ##########
     
@@ -86,13 +84,21 @@ class Freq_TSID_Feet_Sinu_Control:
         self.dv = np.zeros(self.dof)
         self.jointTorques = np.zeros(self.dof)
         self.tau = np.zeros(self.dof)
+        self.dq = np.zeros(self.dof)
+        self.y_mes = np.zeros(6)
+        self.dy_mes = np.zeros(6)
 
+        pin.forwardKinematics(self.model, self.data, qmes, vmes)
+        pin.updateFramePlacements(self.model, self.data)
+        self.y_mes[:3] = self.data.oMf[self.foot_index].translation
+        self.dy_mes[:3] = pin.getFrameVelocity(self.model, self.data, self.foot_index).linear
 
 	# Dynamics Problem initialization
         self.t = 0.0 # time
         self.invdyn = tsid.InverseDynamicsFormulationAccForce("tsid", self.robot, False)
         self.invdyn.computeProblemData(self.t, self.q, self.v)
-
+        
+        # Task definition
         self.se3Task = tsid.TaskSE3Equality("task-se3", self.robot, self.foot)
         self.se3Task.setKp(self.kp_se3 * np.ones(6))
         self.se3Task.setKd(2.0 * np.sqrt(self.kp_se3) * np.ones(6))
@@ -104,6 +110,11 @@ class Freq_TSID_Feet_Sinu_Control:
         se3_target = se3_ref.copy()
         self.trajSE3 = tsid.TrajectorySE3Constant("traj_foot", se3_target)
         self.sampleSE3 = self.trajSE3.computeNext()
+
+        self.y = np.zeros(6)
+        self.y[:3] = se3_ref.translation.copy()
+        self.dy = np.zeros(6)
+
 
         self.offset = np.zeros(6)
         self.offset[:3] = se3_ref.translation
@@ -123,11 +134,11 @@ class Freq_TSID_Feet_Sinu_Control:
         if(self.sol.status!=0):
             print ("QP problem could not be solved! Error code:", self.sol.status)
             self.error = True
-        
 
 
-    def low_level(self, vmes, qmes, Kp, Kd, i):
+########## LOW-LEVEL CONTROL ##########
 
+    def low_level(self, qmes, vmes, Kp, Kd, i):
 
         for index in range(len(qmes)):
             if self.error or (qmes[index]<-3.14) or (qmes[index]>3.14) or (vmes[index]<-30) or (vmes[index]>30): 
@@ -136,8 +147,10 @@ class Freq_TSID_Feet_Sinu_Control:
                 self.t += self.DT
                 return(self.jointTorques, np.zeros(self.dof), np.zeros(self.dof), qmes, vmes)
      
-        '''self.v = vmes.copy()
-        self.q = qmes.copy()  '''
+        q_prev = self.q.copy()
+        v_prev = self.v.copy()
+        dv_prev = self.dv.copy()
+ 
         
         # TSID computation        
 
@@ -145,31 +158,51 @@ class Freq_TSID_Feet_Sinu_Control:
         self.sampleSE3.vel(np.multiply(self.two_pi_f_amp, np.cos(self.two_pi_f*self.t)))
         self.sampleSE3.acc(np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t)))
         self.se3Task.setReference(self.sampleSE3)
-
-        if i == 0:
-            self.y = self.sampleSE3.pos() 
         
-        HQPData = self.invdyn.computeProblemData(self.t, self.q, self.v)     
+        HQPData = self.invdyn.computeProblemData(self.t, qmes, vmes)     
         self.sol = self.solver.solve(HQPData)
         if(self.sol.status!=0):
             print ("QP problem could not be solved! Error code:", self.sol.status)
             self.error = True
 
-        ### Desired State
-        self.dv = self.invdyn.getAccelerations(self.sol)
-        self.v += self.dv * self.DT
-        self.q = pin.integrate(self.model, self.q, self.v*self.DT)
+        J_foot = pin.computeFrameJacobian(self.model, self.data, q_prev, self.foot_index)
+        y_prev = self.y.copy()
+        dy_prev = self.dy.copy()
 
-        ### Feedforward Torque
-        self.jointTorques = self.invdyn.getActuatorForces(self.sol)
-            
+        # Desired Velocity
+        self.dy = self.sampleSE3.vel()
+        self.v = np.linalg.pinv(J_foot) @ self.dy
+
+        # Desired Configuration
         self.y = self.sampleSE3.pos()
+        self.q = q_prev + np.linalg.pinv(J_foot) @ (self.y - y_prev)
+
+        # Desired acceleration - Computed from measured foot position
+        '''dJ = self.data.dJ
+        pin.forwardKinematics(self.model, self.data, qmes, vmes)
+        pin.updateFramePlacements(self.model, self.data)
+        self.y_mes[:3] = self.data.oMf[self.foot_index].translation
+        self.dy_mes[:3] = pin.getFrameVelocity(self.model, self.data, self.foot_index).linear
+        self.ddy = self.sampleSE3.acc()
+        ddy_cmd = self.kp_se3 * (self.y - self.y_mes) + 2.0 * np.sqrt(self.kp_se3) * (self.dy - self.dy_mes) + self.ddy
+        self.dv = np.linalg.pinv(J_foot) @ (ddy_cmd + dJ @ self.v)'''
+
+        # Desired acceleration - Computed from previous desired foot position
+        dJ = self.data.dJ
+        self.ddy = self.sampleSE3.acc()
+        ddy_cmd = self.kp_se3 * (self.y - y_prev) + 2.0 * np.sqrt(self.kp_se3) * (self.dy - dy_prev) + self.ddy
+        self.dv = np.linalg.pinv(J_foot) @ (ddy_cmd + dJ @ self.v)
+
+        # Feedforward Torque
+        self.jointTorques = pin.rnea(self.model, self.data, qmes, vmes, self.dv)
+            
         self.t += self.DT
             
         return(self.jointTorques, Kp, Kd, self.q, self.v)
-     
+        
 
-    ### DATA LOGS AND PLOTS     
+
+    ### DATA LOGS AND PLOTS  
     def sample(self, i):
         self.jointTorques_list[i,:] = self.jointTorques[:]
         self.q_list[i,:] = self.q[:]

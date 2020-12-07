@@ -37,15 +37,18 @@ class Solo_Simu:
 
         self.model = self.robot.model
         self.data = self.robot.data
+        self.foot = 'FR_FOOT'
+        self.foot_index = self.model.getFrameId(self.foot)
 
         self.nb_motors = self.dof
         
         if logSize is not None:
             self.q_mes_list = np.zeros((logSize,self.dof))
             self.v_mes_list = np.zeros((logSize,self.dof))
+            self.y_mes_list = np.zeros((logSize, 3))
         
         
-    def Init(self, q_init):
+    def Init(self, q_init): # Initialize robot configuration
         self.q_mes = q_init
         self.v_mes = np.zeros(self.dof)
         self.a_mes = np.zeros(self.dof)
@@ -54,7 +57,7 @@ class Solo_Simu:
         self.robot.displayVisuals(True)
         self.robot.display(self.q_mes)  
         
-        
+    ### HIGH-LEVEL CONTROL    
     def runSimulation(self, jointTorques):
         self.a_mes = pin.aba(self.model, self.data, self.q_mes, self.v_mes, jointTorques)
         self.v_mes += self.a_mes * self.dt
@@ -62,6 +65,7 @@ class Solo_Simu:
 
         self.robot.display(self.q_mes)
 
+    ### LOW-LEVEL CONTROL
     def SetDesiredJointTorque(self, torque_FF):
         self.feedforwardTorque = torque_FF
         for i in range(self.nb_motors):
@@ -88,6 +92,10 @@ class Solo_Simu:
         self.v_mes += self.a_mes * self.dt
         self.q_mes = pin.integrate(self.model, self.q_mes, self.v_mes*self.dt) 
 
+        pin.forwardKinematics(self.model, self.data, self.q_mes, self.v_mes, self.a_mes)
+        pin.updateFramePlacements(self.model, self.data)
+        self.y_mes = self.data.oMf[self.foot_index].translation
+
         self.robot.display(self.q_mes)
         if WaitEndOfCycle:
             self.WaitEndOfCycle()
@@ -103,14 +111,17 @@ class Solo_Simu:
       
 
 
-        
+
+    ### DATA LOGS AND PLOTS        
     def sample(self,i):
         self.q_mes_list[i,:] = self.q_mes[:].flat
         self.v_mes_list[i,:] = self.v_mes[:].flat
+        self.y_mes_list[i,:] = self.y_mes[:].flat
         
     def saveAll(self, filename = "data"):
         date_str = datetime.now().strftime('_%Y_%m_%d_%H_%M')
-        np.savez(filename + date_str + ".npz",  
+        np.savez(filename + date_str + ".npz", 
+                 y_mes=self.y_mes_list, 
                  q_mes=self.q_mes_list, 
                  v_mes=self.v_mes_list)
         
