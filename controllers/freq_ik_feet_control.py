@@ -24,7 +24,7 @@ class Freq_IK_Feet_Control:
         
         self.DT = dt
         self.PRINT_N = 500                     
-        self.DISPLAY_N = 25    
+        self.DISPLAp_N = 25    
         self.t = 0.0  
         
         # Robot model 
@@ -72,33 +72,31 @@ class Freq_IK_Feet_Control:
         
         if logSize is not None:
             self.tau_list = np.zeros((logSize,self.dof))
-            self.jointTorques_list = np.zeros((logSize,self.dof))
-            self.q_list = np.zeros((logSize,self.dof))
-            self.v_list = np.zeros((logSize,self.dof))
-            self.y_list = np.zeros((logSize, 3))
+            self.torque_des_list = np.zeros((logSize,self.dof))
+            self.q_cmd_list = np.zeros((logSize,self.dof))
+            self.v_cmd_list = np.zeros((logSize,self.dof))
+            self.p_des_list = np.zeros((logSize, 3))
         
         
-    def Init(self, qmes, vmes):
+    def Init(self, q_mes, v_mes):
+
         # Initial configuration
-        self.q = qmes.copy()
-        self.v = vmes.copy()
-        self.dv = np.zeros(self.dof)
-        self.jointTorques = np.zeros(self.dof)
-        self.tau = np.zeros(self.dof)
+        self.q_cmd = q_mes.copy()
+        self.v_cmd = v_mes.copy()
+        self.dv_cmd = np.zeros(self.dof)
+        self.torque_des = np.zeros(self.dof)
         self.dq = np.zeros(self.dof)
 
-        pin.forwardKinematics(self.model, self.data, self.q, self.v, self.dv)
+        pin.forwardKinematics(self.model, self.data, q_mes, v_mes)
         pin.updateFramePlacements(self.model, self.data)
-        y_mes = self.data.oMf[self.foot_index].translation
-        self.y_mes = np.zeros(6)
-        self.y_mes[:3] = y_mes
-        self.y = self.y_mes.copy()
-        self.dy = np.zeros(6)
+        self.p_des = self.data.oMf[self.foot_index].translation
+        self.dp_des = pin.getFrameVelocity(self.model, self.data, self.foot_index).linear
 
-        self.offset               = self.y_mes.copy()
-        self.amp                  = np.zeros(6)
+        # Desired trajectory initialisation
+        self.offset               = self.p_des.copy()
+        self.amp                  = np.zeros(3)
         self.amp[0]               = 0.05
-        self.two_pi_f             = np.zeros(6)
+        self.two_pi_f             = np.zeros(3)
         self.two_pi_f[0]          = 2*np.pi*1.0
         self.two_pi_f_amp         = np.multiply(self.two_pi_f,self.amp)
         self.two_pi_f_squared_amp = np.multiply(self.two_pi_f, self.two_pi_f_amp)
@@ -106,67 +104,71 @@ class Freq_IK_Feet_Control:
 
 ########## LOW-LEVEL CONTROL ##########
 
-    def low_level(self, qmes, vmes, Kp, Kd, i):
+    def low_level(self, q_mes, v_mes, Kp, Kd, i):
 
-        for index in range(len(qmes)):
-            if self.error or (qmes[index]<-3.14) or (qmes[index]>3.14) or (vmes[index]<-30) or (vmes[index]>30): 
+        # Safety Controller
+        for index in range(len(q_mes)):
+            if self.error or (q_mes[index]<-3.14) or (q_mes[index]>3.14) or (v_mes[index]<-30) or (v_mes[index]>30): 
                 self.error = True
-                self.jointTorques = -self.security * vmes
+                self.torque_des = -self.security * v_mes
                 self.t += self.DT
-                return(self.jointTorques, np.zeros(self.dof), np.zeros(self.dof), qmes, vmes)
+                return(self.torque_des, np.zeros(self.dof), np.zeros(self.dof), q_mes, v_mes)
      
-        qp = self.q.copy()
-        vp = self.v.copy()
-        dvp = self.dv.copy()
-        y_prev = self.y.copy()
-        dy_prev = self.dy.copy()
-        dqp = self.dq.copy()
+        # Previous Values
+        q_prev = self.q_cmd.copy()
+        v_prev = self.v_cmd.copy()
+        dv_prev = self.dv_cmd.copy()
+        p_prev = self.p_des.copy()
+        dp_prev = self.dp_des.copy()
  
         
-        # TSID computation        
+        # Desired trajectory update        
 
-        self.y = self.offset + np.multiply(self.amp, np.sin(self.two_pi_f*self.t))
-        self.dy = np.multiply(self.two_pi_f_amp, np.cos(self.two_pi_f*self.t))
-        self.ddy = np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t))
+        self.p_des = self.offset + np.multiply(self.amp, np.sin(self.two_pi_f*self.t))
+        self.dp_des = np.multiply(self.two_pi_f_amp, np.cos(self.two_pi_f*self.t))
+        self.ddp_des = np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t))
 
+        ### Inverse Kinematics
 
+        J_foot = pin.computeFrameJacobian(self.model, self.data, q_prev, self.foot_index, pin.LOCAL_WORLD_ALIGNED)
+        self.J_foot = J_foot[:3,:]
 
-        pin.forwardKinematics(self.model, self.data, qp, vp, dvp)
+        # Desired Velocity
+        self.v_cmd = np.linalg.pinv(self.J_foot) @ self.dp_des
+
+        # Desired Configuration
+        self.q_cmd = q_prev + np.linalg.pinv(self.J_foot) @ (self.p_des - p_prev)
+
+        # Desired acceleration
+        pin.forwardKinematics(self.model, self.data, q_mes, v_mes)
         pin.updateFramePlacements(self.model, self.data)
-        J_foot = pin.computeFrameJacobian(self.model, self.data, qp, self.foot_index)
+        self.p_mes = self.data.oMf[self.foot_index].translation
+        self.dp_mes = pin.getFrameVelocity(self.model, self.data, self.foot_index).linear
+        ddp_cmd = self.kp_se3 * (self.p_des - self.p_mes) + 2.0 * np.sqrt(self.kp_se3) * (self.dp_des - self.dp_mes) + self.ddp_des
+        self.dv_cmd = np.linalg.pinv(self.J_foot) @ ddp_cmd
 
-        self.v = np.linalg.pinv(J_foot) @ self.dy
-
-        dJ = self.data.dJ
-        ddy_cmd = self.kp_se3 * (self.y - y_prev) + 2.0 * np.sqrt(self.kp_se3) * (self.dy - dy_prev) + self.ddy
-        self.dv = np.linalg.pinv(J_foot) @ (ddy_cmd + dJ @ self.v)
-
-        #self.dq = dqp + np.linalg.pinv(J_foot) @ ( self.y - y_prev - J_foot @ dqp )
-        self.q = qp + np.linalg.pinv(J_foot) @ (self.y - y_prev)
-        #self.q = qp + self.dq
-
-  
-        self.jointTorques = pin.rnea(self.model, self.data, qmes, vmes, self.dv)
+        # Feedforward Torque
+        self.torque_des = pin.rnea(self.model, self.data, q_mes, v_mes, self.dv_cmd)
             
         self.t += self.DT
             
-        return(self.jointTorques, Kp, Kd, self.q, self.v)
+        return(self.torque_des, Kp, Kd, self.q_cmd, self.v_cmd)
         
 
 
 
     def sample(self, i):
-        self.jointTorques_list[i,:] = self.jointTorques[:]
-        self.q_list[i,:] = self.q[:]
-        self.v_list[i,:] = self.v[:]
-        self.y_list[i,:] = self.y[:3]
+        self.torque_des_list[i,:] = self.torque_des[:]
+        self.q_cmd_list[i,:] = self.q_cmd[:]
+        self.v_cmd_list[i,:] = self.v_cmd[:]
+        self.p_des_list[i,:] = self.p_des[:3]
         
     def saveAll(self, filename = "data"):
         date_str = datetime.now().strftime('_%Y_%m_%d_%H_%M')
         np.savez(filename + date_str + ".npz",
-                 q=self.q_list, 
-                 v=self.v_list,
-                 y=self.y_list,
-                 jointTorques=self.jointTorques_list)
+                 q=self.q_cmd_list, 
+                 v=self.v_cmd_list,
+                 p=self.p_des_list,
+                 torque_des=self.torque_des_list)
    
 

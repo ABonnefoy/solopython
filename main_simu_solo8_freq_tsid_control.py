@@ -81,15 +81,26 @@ def tsid_control(experiment=0):
         controller = Freq_IK_Feet_Control(logSize=N_SIMULATION, dt = dt)
         device = Solo_Simu_Pybullet(dt=DT, logSize=N_SIMULATION)'''
 
+    ### Foot control - Noise in velocity measurement
+    if experiment==10:  # Integrated Feedback, TSID motion
+        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt)
+        device = Solo_Simu(dt=DT, logSize=N_SIMULATION, noise=True)
+    if experiment==11:  # IK computed Feedback, TSID motion
+        controller = Freq_IK_TSID_Feet_Control(logSize=N_SIMULATION, dt = dt)
+        device = Solo_Simu(dt=DT, logSize=N_SIMULATION, noise=True)
+    if experiment==12:  # IK computed Feedback, non TSID motion
+        controller = Freq_IK_Feet_Control(logSize=N_SIMULATION, dt = dt)
+        device = Solo_Simu(dt=DT, logSize=N_SIMULATION, noise=True)
+
     nb_motors = device.nb_motors
 
     # PD Gains
     Kp = 10.0 * np.ones(nb_motors)
-    Kd = 0.03 * np.ones(nb_motors)
+    Kd = 0.01 * np.ones(nb_motors)
         
     device.Init(q_init=controller.q_init.copy()) #Initialize device with reference position
     
-    controller.Init(qmes=device.q_mes, vmes=device.v_mes) # Initialize controller with measured reference position
+    controller.Init(q_mes=device.q_mes, v_mes=device.v_mes) # Initialize controller with measured reference position
     
     t_list = []	#list of the time of each simulation step
     i = 0
@@ -151,7 +162,8 @@ def plotAll(controller, device, t_list, experiment, Kp, Kd):
     for k in range(2):
         plt.subplot(2,1,k+1)
         plt.title(frame_names[k+3],fontsize = fontsize)
-        plt.plot(controller.jointTorques_list[:,k+2], 'b', linestyle = 'dotted', label = 'Command')
+        plt.plot(device.torque_cmd_list[:,k+2], 'b', linestyle = 'dotted', label = 'Command')
+        plt.plot(controller.torque_des_list[:,k+2], 'c', linestyle = 'dashdot', label = 'Feedforward')
         axes = plt.gca()
         axes.tick_params(axis='both', which='major', labelsize=fontsize-2)
     axes.set_ylabel('Torque [Nm]',fontsize = fontsize)
@@ -167,7 +179,7 @@ def plotAll(controller, device, t_list, experiment, Kp, Kd):
         plt.subplot(2,1,k+1)
         plt.title(frame_names[k+3],fontsize = fontsize)
         plt.plot(device.q_mes_list[:,k+2], '-b', linestyle = 'dotted', label = 'Measured')  
-        plt.plot(controller.q_list[:,k+2], '-c', linestyle = 'dashdot', label = 'Desired')  
+        plt.plot(controller.q_cmd_list[:,k+2], '-c', linestyle = 'dashdot', label = 'Desired')  
         axes = plt.gca()
         axes.tick_params(axis='both', which='major', labelsize=fontsize-2)
     axes.set_ylabel('Position [rad]',fontsize = fontsize)
@@ -183,7 +195,7 @@ def plotAll(controller, device, t_list, experiment, Kp, Kd):
         plt.subplot(2,1,k+1)
         plt.title(frame_names[k+3],fontsize = fontsize)
         plt.plot(device.v_mes_list[:,k+2], '-b', linestyle = 'dotted', label = 'Measured')
-        plt.plot(controller.v_list[:,k+2], '-c', linestyle = 'dashdot', label = 'Desired')
+        plt.plot(controller.v_cmd_list[:,k+2], '-c', linestyle = 'dashdot', label = 'Desired')
         axes = plt.gca()
         axes.tick_params(axis='both', which='major', labelsize=fontsize-2)
     axes.set_ylabel('Velocity [rad/s]',fontsize = fontsize)
@@ -199,8 +211,8 @@ def plotAll(controller, device, t_list, experiment, Kp, Kd):
         for k in range(3):
             plt.subplot(3,1,k+1)
             plt.title(axis[k],fontsize = fontsize)
-            plt.plot(device.y_mes_list[:,k], '-b', linestyle = 'dotted', label = 'Measured')
-            plt.plot(controller.y_list[:,k], '-c', linestyle = 'dashdot', label = 'Desired')
+            plt.plot(device.p_mes_list[:,k], '-b', linestyle = 'dotted', label = 'Measured')
+            plt.plot(controller.p_des_list[:,k], '-c', linestyle = 'dashdot', label = 'Desired')
             axes = plt.gca()
             axes.tick_params(axis='both', which='major', labelsize=fontsize-2)
         axes.set_ylabel('Position [m]',fontsize = fontsize)

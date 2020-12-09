@@ -17,7 +17,6 @@ from datetime import datetime as datetime
 import os
 import sys
 
-from controllers.safety_control import Safety_Control
 
 
 class Freq_TSID_Feet_Sinu_Control:
@@ -41,7 +40,6 @@ class Freq_TSID_Feet_Sinu_Control:
         self.error = False
         self.joint_error_list = []
         self.time_error = False
-        self.safety_controller = Safety_Control()
         self.tau_max = 3.0
         self.security = 0.05        
         
@@ -72,26 +70,24 @@ class Freq_TSID_Feet_Sinu_Control:
         
         
         if logSize is not None:
-            self.tau_list = np.zeros((logSize,self.dof))
-            self.jointTorques_list = np.zeros((logSize,self.dof))
-            self.q_list = np.zeros((logSize,self.dof))
-            self.v_list = np.zeros((logSize,self.dof))
-            self.y_list = np.zeros((logSize, 3))
+            self.torque_des_list = np.zeros((logSize,self.dof))
+            self.q_cmd_list = np.zeros((logSize,self.dof))
+            self.v_cmd_list = np.zeros((logSize,self.dof))
+            self.p_des_list = np.zeros((logSize, 3))
         
         
-    def Init(self, qmes, vmes):
+    def Init(self, q_mes, v_mes):
         # Initial configuration
-        self.q = qmes.copy()
-        self.v = vmes.copy()
-        self.dv = np.zeros(self.dof)
-        self.jointTorques = np.zeros(self.dof)
-        self.tau = np.zeros(self.dof)
+        self.q_cmd = q_mes.copy()
+        self.v_cmd = v_mes.copy()
+        self.dv_cmd = np.zeros(self.dof)
+        self.torque_des = np.zeros(self.dof)
 
 
 	# Dynamics Problem initialization
         self.t = 0.0 # time
         self.invdyn = tsid.InverseDynamicsFormulationAccForce("tsid", self.robot, False)
-        self.invdyn.computeProblemData(self.t, self.q, self.v)
+        self.invdyn.computeProblemData(self.t, self.q_cmd, self.v_cmd)
 
         self.se3Task = tsid.TaskSE3Equality("task-se3", self.robot, self.foot)
         self.se3Task.setKp(self.kp_se3 * np.ones(6))
@@ -117,7 +113,7 @@ class Freq_TSID_Feet_Sinu_Control:
         # Solver
         self.solver = tsid.SolverHQuadProgFast("qp solver")
         self.solver.resize(self.invdyn.nVar, self.invdyn.nEq, self.invdyn.nIn)
-        HQPData = self.invdyn.computeProblemData(self.t, self.q, self.v)
+        HQPData = self.invdyn.computeProblemData(self.t, self.q_cmd, self.v_cmd)
         HQPData.print_all()        
         self.sol = self.solver.solve(HQPData)
         if(self.sol.status!=0):
@@ -126,18 +122,15 @@ class Freq_TSID_Feet_Sinu_Control:
         
 
 
-    def low_level(self, vmes, qmes, Kp, Kd, i):
+    def low_level(self, v_mes, q_mes, Kp, Kd, i):
 
 
-        for index in range(len(qmes)):
-            if self.error or (qmes[index]<-3.14) or (qmes[index]>3.14) or (vmes[index]<-30) or (vmes[index]>30): 
+        for index in range(len(q_mes)):
+            if self.error or (q_mes[index]<-3.14) or (q_mes[index]>3.14) or (v_mes[index]<-30) or (v_mes[index]>30): 
                 self.error = True
-                self.jointTorques = -self.security * vmes
+                self.torque_des = -self.security * v_mes
                 self.t += self.DT
-                return(self.jointTorques, np.zeros(self.dof), np.zeros(self.dof), qmes, vmes)
-     
-        '''self.v = vmes.copy()
-        self.q = qmes.copy()  '''
+                return(self.torque_des, np.zeros(self.dof), np.zeros(self.dof), q_mes, v_mes)
         
         # TSID computation        
 
@@ -147,41 +140,41 @@ class Freq_TSID_Feet_Sinu_Control:
         self.se3Task.setReference(self.sampleSE3)
 
         if i == 0:
-            self.y = self.sampleSE3.pos() 
+            self.p_des = self.sampleSE3.pos() 
         
-        HQPData = self.invdyn.computeProblemData(self.t, self.q, self.v)     
+        HQPData = self.invdyn.computeProblemData(self.t, self.q_cmd, self.v_cmd)     
         self.sol = self.solver.solve(HQPData)
         if(self.sol.status!=0):
             print ("QP problem could not be solved! Error code:", self.sol.status)
             self.error = True
 
         ### Desired State
-        self.dv = self.invdyn.getAccelerations(self.sol)
-        self.v += self.dv * self.DT
-        self.q = pin.integrate(self.model, self.q, self.v*self.DT)
+        self.dv_cmd = self.invdyn.getAccelerations(self.sol)
+        self.v_cmd += self.dv_cmd * self.DT
+        self.q_cmd = pin.integrate(self.model, self.q_cmd, self.v_cmd*self.DT)
 
         ### Feedforward Torque
-        self.jointTorques = self.invdyn.getActuatorForces(self.sol)
+        self.torque_des = self.invdyn.getActuatorForces(self.sol)
             
-        self.y = self.sampleSE3.pos()
+        self.p_des = self.sampleSE3.pos()
         self.t += self.DT
             
-        return(self.jointTorques, Kp, Kd, self.q, self.v)
+        return(self.torque_des, Kp, Kd, self.q_cmd, self.v_cmd)
      
 
     ### DATA LOGS AND PLOTS     
     def sample(self, i):
-        self.jointTorques_list[i,:] = self.jointTorques[:]
-        self.q_list[i,:] = self.q[:]
-        self.v_list[i,:] = self.v[:]
-        self.y_list[i,:] = self.y[:3]
+        self.torque_des_list[i,:] = self.torque_des[:]
+        self.q_cmd_list[i,:] = self.q_cmd[:]
+        self.v_cmd_list[i,:] = self.v_cmd[:]
+        self.p_des_list[i,:] = self.p_des[:3]
         
     def saveAll(self, filename = "data"):
         date_str = datetime.now().strftime('_%Y_%m_%d_%H_%M')
         np.savez(filename + date_str + ".npz",
-                 q=self.q_list, 
-                 v=self.v_list,
-                 y=self.y_list,
-                 jointTorques=self.jointTorques_list)
+                 q=self.q_cmd_list, 
+                 v=self.v_cmd_list,
+                 p=self.p_des_list,
+                 torque_des=self.torque_des_list)
    
 
