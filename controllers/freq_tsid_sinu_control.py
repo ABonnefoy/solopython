@@ -77,32 +77,32 @@ class Freq_TSID_Sinu_Control:
                 
         if logSize is not None:
             self.tau_list = np.zeros((logSize,self.dof))
-            self.jointTorques_list = np.zeros((logSize,self.dof))
-            self.q_list = np.zeros((logSize,self.dof))
-            self.v_list = np.zeros((logSize,self.dof))
+            self.torque_des_list = np.zeros((logSize,self.dof))
+            self.q_cmd_list = np.zeros((logSize,self.dof))
+            self.v_cmd_list = np.zeros((logSize,self.dof))
         
         
-    def Init(self, qmes, vmes):
+    def Init(self, q_mes, v_mes):
         # Initial configuration
-        self.q = qmes.copy()
-        self.v = vmes.copy()
-        self.dv = np.zeros(self.dof)
-        self.jointTorques = np.zeros(self.dof)
+        self.q_cmd = q_mes.copy()
+        self.v_cmd = v_mes.copy()
+        self.dv_cmd = np.zeros(self.dof)
+        self.torque_des = np.zeros(self.dof)
         self.tau = np.zeros(self.dof)
 	
-        self.safety_controller.Init(qmes, vmes)
+        self.safety_controller.Init(q_mes, v_mes)
 
 	# Dynamics Problem initialization
         self.t = 0.0 # time
         self.invdyn = tsid.InverseDynamicsFormulationAccForce("tsid", self.robot, False)
-        self.invdyn.computeProblemData(self.t, self.q, self.v)
+        self.invdyn.computeProblemData(self.t, self.q_cmd, self.v_cmd)
         
         # Task definition
         self.postureTask = tsid.TaskJointPosture("task-posture", self.robot)
         self.postureTask.setKp(self.kp_posture * np.ones(self.dof)) 
         self.postureTask.setKd(2.0 * np.sqrt(self.kp_posture) * np.ones(self.dof))
         self.invdyn.addMotionTask(self.postureTask, self.w_posture, self.level_posture, 0.0)
-        q_ref = self.q.copy() 
+        q_ref = self.q_cmd.copy() 
         self.trajPosture = tsid.TrajectoryEuclidianConstant("traj_joint", q_ref) # Goal = static
         self.samplePosture = self.trajPosture.computeNext()
 
@@ -119,74 +119,29 @@ class Freq_TSID_Sinu_Control:
         # Solver
         self.solver = tsid.SolverHQuadProgFast("qp solver")
         self.solver.resize(self.invdyn.nVar, self.invdyn.nEq, self.invdyn.nIn)
-        HQPData = self.invdyn.computeProblemData(self.t, self.q, self.v)
+        HQPData = self.invdyn.computeProblemData(self.t, self.q_cmd, self.v_cmd)
         HQPData.print_all()        
         self.sol = self.solver.solve(HQPData)
         if(self.sol.status!=0):
             print ("QP problem could not be solved! Error code:", self.sol.status)
             self.error = True
-        
 
-##### HIGH LEVEL CONTROL
-
-    def compute(self, qmes, vmes, i):
-        
-        self.v = vmes.copy()
-        self.q = qmes.copy()  
-        
-        # TSID computation
-        self.samplePosture.pos(self.offset + np.multiply(self.amp, np.sin(self.two_pi_f*self.t)))
-        self.samplePosture.vel(np.multiply(self.two_pi_f_amp, np.cos(self.two_pi_f*self.t)))
-        self.samplePosture.acc(np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t)))
-        self.postureTask.setReference(self.samplePosture)        
-        
-        HQPData = self.invdyn.computeProblemData(self.t, self.q, self.v)     
-        self.sol = self.solver.solve(HQPData)
-        if(self.sol.status!=0):
-            print ("QP problem could not be solved! Error code:", self.sol.status)
-            self.error = True
-
-        self.dv = self.invdyn.getAccelerations(self.sol)
-        self.v += self.dv * self.DT
-        self.q = pin.integrate(self.model, self.q, self.v*self.DT)
-
-     
-    def control(self, qmes, vmes, i, Kp, Kd):
-
-        # Safety controller
-        if self.error:
-            torque = self.safety_controller.control(qmes, vmes, i, Kp, Kd)
-            self.error=False
-        # Proportional controller
-        else:
-            torque_FB = np.array(Kp * (self.q - qmes) + Kd * (self.v-vmes))
-            torque_FF = self.invdyn.getActuatorForces(self.sol)
-            torque = torque_FB + torque_FF
-            for index in range(len(qmes)):
-                if (qmes[index]<-3.14) or (qmes[index]>3.14) or (vmes[index]<-30) or (vmes[index]>30): 
-                    torque = self.safety_controller.control(qmes, vmes, i, Kp, Kd)
-        self.jointTorques = np.clip(torque, -self.tau_max * np.ones(8), self.tau_max * np.ones(8))
-
-        self.t += self.DT
-     
-     
-        return(self.jointTorques)
 
 
 ##### LOW LEVEL CONTROL
 
-    def low_level(self, vmes, qmes, Kp, Kd, i):
+    def low_level(self, v_mes, q_mes, Kp, Kd, i):
 
 
-        for index in range(len(qmes)):
-            if self.error or (qmes[index]<-3.14) or (qmes[index]>3.14) or (vmes[index]<-30) or (vmes[index]>30): 
+        for index in range(len(q_mes)):
+            if self.error or (q_mes[index]<-3.14) or (q_mes[index]>3.14) or (v_mes[index]<-30) or (v_mes[index]>30): 
                 self.error = True
-                self.jointTorques = -self.security * vmes
+                self.torque_des = -self.security * v_mes
                 self.t += self.DT
-                return(self.jointTorques, np.zeros(self.dof), np.zeros(self.dof), qmes, vmes)
+                return(self.torque_des, np.zeros(self.dof), np.zeros(self.dof), q_mes, v_mes)
      
-        '''self.v = vmes.copy()
-        self.q = qmes.copy()  '''
+        '''self.v_cmd = v_mes.copy()
+        self.q_cmd = q_mes.copy()  '''
     
 
         # TSID computation
@@ -195,34 +150,34 @@ class Freq_TSID_Sinu_Control:
         self.samplePosture.acc(np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t)))
         self.postureTask.setReference(self.samplePosture)        
         
-        HQPData = self.invdyn.computeProblemData(self.t, self.q, self.v)     
+        HQPData = self.invdyn.computeProblemData(self.t, self.q_cmd, self.v_cmd)     
         self.sol = self.solver.solve(HQPData)
         if(self.sol.status!=0):
             print ("QP problem could not be solved! Error code:", self.sol.status)
             self.error = True
 
-        pin.framesForwardKinematics(self.model, self.data, qmes)
+        pin.framesForwardKinematics(self.model, self.data, q_mes)
 
-        self.dv = self.invdyn.getAccelerations(self.sol)
-        self.v += self.dv * self.DT
-        self.q = pin.integrate(self.model, self.q, self.v*self.DT)
+        self.dv_cmd = self.invdyn.getAccelerations(self.sol)
+        self.v_cmd += self.dv_cmd * self.DT
+        self.q_cmd = pin.integrate(self.model, self.q_cmd, self.v_cmd*self.DT)
 
-        self.jointTorques = self.invdyn.getActuatorForces(self.sol)
+        self.torque_des = self.invdyn.getActuatorForces(self.sol)
             
         self.t += self.DT
             
-        return(self.jointTorques, Kp, Kd, self.q, self.v)
+        return(self.torque_des, Kp, Kd, self.q_cmd, self.v_cmd)
     
     def sample(self, i):
-        self.jointTorques_list[i,:] = self.jointTorques[:]
-        self.q_list[i,:] = self.q[:]
-        self.v_list[i,:] = self.v[:]
+        self.torque_des_list[i,:] = self.torque_des[:]
+        self.q_cmd_list[i,:] = self.q_cmd[:]
+        self.v_cmd_list[i,:] = self.v_cmd[:]
         
     def saveAll(self, filename = "data"):
         date_str = datetime.now().strftime('_%Y_%m_%d_%H_%M')
         np.savez(filename + date_str + ".npz",
-                 q=self.q_list, 
-                 v=self.v_list,
-                 jointTorques=self.jointTorques_list)
+                 q=self.q_cmd_list, 
+                 v=self.v_cmd_list,
+                 torque_des=self.torque_des_list)
    
 

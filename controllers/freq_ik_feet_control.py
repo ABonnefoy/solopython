@@ -97,7 +97,7 @@ class Freq_IK_Feet_Control:
         self.amp                  = np.zeros(3)
         self.amp[0]               = 0.05
         self.two_pi_f             = np.zeros(3)
-        self.two_pi_f[0]          = 2*np.pi*1.0
+        self.two_pi_f[0]          = 2*np.pi*2.0
         self.two_pi_f_amp         = np.multiply(self.two_pi_f,self.amp)
         self.two_pi_f_squared_amp = np.multiply(self.two_pi_f, self.two_pi_f_amp)
 

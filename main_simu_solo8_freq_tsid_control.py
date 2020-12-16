@@ -17,6 +17,7 @@ from simulators.solo_simu import Solo_Simu
 from controllers.safety_control import Safety_Control
 
 from controllers.freq_tsid_sinu_control import Freq_TSID_Sinu_Control
+from controllers.freq_tsid_joint_control import Freq_TSID_Joint_Control
 from controllers.freq_FF_sinu_control import Freq_FF_Sinu_Control
 from controllers.freq_tsid_feet_sinu_control import Freq_TSID_Feet_Sinu_Control
 from controllers.freq_ik_tsid_feet_control import Freq_IK_TSID_Feet_Control
@@ -28,75 +29,90 @@ def tsid_control(experiment=0):
 
     ########## VARIABLES INIT ##########
 
+
+    f_controller = 5e2                # Controller frequency
+    f_device = 10e3                     # Device frequency
+    dt_controller = 1/f_controller      # Controller timestep
+    dt_device = 1/f_device              # Device timestep
+    ratio = int(f_device//f_controller)       # Frequency ratio
+
+
     # Simulation 
     PRINT_N = 500                     
     DISPLAY_N = 25                    
-    N_SIMULATION = 10000
+    N_SIMULATION = 1000
     dof = 8
-    dt = 0.01   # Controller timestep
-    DT = 0.0005 # Device timestep
-    ratio = dt/DT
+    time_simu = 0.0
+
+
+    # PD Gains 
+    #Kp = 6e0 * np.ones(nb_motors)
+    Kp = np.array([0.0, 0.0, 6.0, 9.0, 0.0, 0.0, 0.0, 0.0])
+    #Kd = 1e-1 * np.ones(nb_motors)
+    Kd = np.array([0.0, 0.0, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0])
 
     ### Integrated feedback, without Feedforward Torque, for posture control
-    '''if experiment==1:
-        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = dt, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.0, amp_knee = 0.0)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
+    if experiment==1:
+        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = dt_controller, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.0, amp_knee = 0.0)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION)
     if experiment==2:
-        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = dt, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.5, amp_knee = 0.6)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
+        controller = Freq_TSID_Joint_Control(logSize=N_SIMULATION, dt = dt_controller, q_disp = np.array([0.0, 0.0, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0]))
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION)
     if experiment==3:
-        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = dt, freq_hip = 0.5, amp_hip = 0.4, freq_knee = 0.5, amp_knee = 0.6)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION)'''
+        controller = Freq_TSID_Sinu_Control(logSize=N_SIMULATION, dt = dt_controller, freq_hip = 0.5, amp_hip = 0.4, freq_knee = 0.5, amp_knee = 0.6)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION)
 
     ### Integrated feedback simulations, with Feedforward Torque, for posture control
     '''if experiment==4:
-        controller = Freq_FF_Sinu_Control(logSize=N_SIMULATION, dt = dt, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.0, amp_knee = 0.0)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
+        controller = Freq_FF_Sinu_Control(logSize=N_SIMULATION, dt = dt_controller, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.0, amp_knee = 0.0)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION)
     if experiment==5:
-        controller = Freq_FF_Sinu_Control(logSize=N_SIMULATION, dt = dt, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.5, amp_knee = 0.6)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
+        controller = Freq_FF_Sinu_Control(logSize=N_SIMULATION, dt = dt_controller, freq_hip = 0.0, amp_hip = 0.0, freq_knee = 0.5, amp_knee = 0.6)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION)
     if experiment==6:
-        controller = Freq_FF_Sinu_Control(logSize=N_SIMULATION, dt = dt, freq_hip = 0.5, amp_hip = 0.4, freq_knee = 0.5, amp_knee = 0.6)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION)'''
+        controller = Freq_FF_Sinu_Control(logSize=N_SIMULATION, dt = dt_controller, freq_hip = 0.5, amp_hip = 0.4, freq_knee = 0.5, amp_knee = 0.6)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION)'''
 
     ### Foot control
     if experiment==7:  # Integrated Feedback, TSID motion
-        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
+        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt_controller)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION)
+        Kp = np.array([0.0, 0.0, 5.0, 7.0, 0.0, 0.0, 0.0, 0.0])
+        Kd = np.array([0.0, 0.0, 0.01, 0.01, 0.0, 0.0, 0.0, 0.0])
     if experiment==8:  # IK computed Feedback, TSID motion
-        controller = Freq_IK_TSID_Feet_Control(logSize=N_SIMULATION, dt = dt)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
+        controller = Freq_IK_TSID_Feet_Control(logSize=N_SIMULATION, dt = dt_controller)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION)
+        Kp = np.array([0.0, 0.0, 6.0, 9.0, 0.0, 0.0, 0.0, 0.0])
+        Kd = np.array([0.0, 0.0, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0])
     if experiment==9:  # IK computed Feedback, non TSID motion
-        controller = Freq_IK_Feet_Control(logSize=N_SIMULATION, dt = dt)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION)
+        controller = Freq_IK_Feet_Control(logSize=N_SIMULATION, dt = dt_controller)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION)
+        Kp = np.array([0.0, 0.0, 14.0, 17.0, 0.0, 0.0, 0.0, 0.0])
+        Kd = np.array([0.0, 0.0, 0.1, 0.3, 0.0, 0.0, 0.0, 0.0])
 
     ### Foot control - PyBullet simulator
     '''if experiment==7:  # Integrated Feedback, TSID motion
-        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt)
-        device = Solo_Simu_Pybullet(dt=DT, logSize=N_SIMULATION)
+        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt_controller)
+        device = Solo_Simu_Pybullet(dt=dt_device, logSize=N_SIMULATION)
     if experiment==8:  # IK computed Feedback, TSID motion
-        controller = Freq_IK_TSID_Feet_Control(logSize=N_SIMULATION, dt = dt)
-        device = Solo_Simu_Pybullet(dt=DT, logSize=N_SIMULATION)
+        controller = Freq_IK_TSID_Feet_Control(logSize=N_SIMULATION, dt = dt_controller)
+        device = Solo_Simu_Pybullet(dt=dt_device, logSize=N_SIMULATION)
     if experiment==9:  # IK computed Feedback, non TSID motion
-        controller = Freq_IK_Feet_Control(logSize=N_SIMULATION, dt = dt)
-        device = Solo_Simu_Pybullet(dt=DT, logSize=N_SIMULATION)'''
+        controller = Freq_IK_Feet_Control(logSize=N_SIMULATION, dt = dt_controller)
+        device = Solo_Simu_Pybullet(dt=dt_device, logSize=N_SIMULATION)'''
 
     ### Foot control - Noise in velocity measurement
-    if experiment==10:  # Integrated Feedback, TSID motion
-        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION, noise=True)
+    '''if experiment==10:  # Integrated Feedback, TSID motion
+        controller = Freq_TSID_Feet_Sinu_Control(logSize=N_SIMULATION, dt = dt_controller)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION, noise=True)
     if experiment==11:  # IK computed Feedback, TSID motion
-        controller = Freq_IK_TSID_Feet_Control(logSize=N_SIMULATION, dt = dt)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION, noise=True)
+        controller = Freq_IK_TSID_Feet_Control(logSize=N_SIMULATION, dt = dt_controller)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION, noise=True)
     if experiment==12:  # IK computed Feedback, non TSID motion
-        controller = Freq_IK_Feet_Control(logSize=N_SIMULATION, dt = dt)
-        device = Solo_Simu(dt=DT, logSize=N_SIMULATION, noise=True)
+        controller = Freq_IK_Feet_Control(logSize=N_SIMULATION, dt = dt_controller)
+        device = Solo_Simu(dt=dt_device, logSize=N_SIMULATION, noise=True)'''
 
     nb_motors = device.nb_motors
-
-    # PD Gains
-    Kp = 10.0 * np.ones(nb_motors)
-    Kd = 0.01 * np.ones(nb_motors)
         
     device.Init(q_init=controller.q_init.copy()) #Initialize device with reference position
     
@@ -113,17 +129,18 @@ def tsid_control(experiment=0):
         
         time_start = tmp.time()      
 
-        if i % ratio == 0:  # Set to controller frequency
-            torque_FF, Kp, Kd, q_des, v_des = controller.low_level(device.q_mes, device.v_mes, Kp, Kd, i) # Feedback and Feedforward computing
+        torque_FF, Kp, Kd, q_des, v_des = controller.low_level(device.q_mes, device.v_mes, Kp, Kd, i) # Feedback and Feedforward computing
+        torque_reduced = np.array([0.0, 0.0, torque_FF[2], torque_FF[3], 0.0, 0.0, 0.0, 0.0])
+        
+        device.SetDesiredJointTorque(torque_reduced)              # With Feedforward Torque
+        #device.SetDesiredJointTorque(np.zeros(nb_motors))   # Without Feedforward Torque
+    
+        device.SetDesiredJointPDgains(Kp, Kd)
+        device.SetDesiredJointPosition(q_des)
+        device.SetDesiredJointVelocity(v_des)
 
-            device.SetDesiredJointTorque(torque_FF)              # With Feedforward Torque
-            #device.SetDesiredJointTorque(np.zeros(nb_motors))   # Without Feedforward Torque
-      
-            device.SetDesiredJointPDgains(Kp, Kd)
-            device.SetDesiredJointPosition(q_des)
-            device.SetDesiredJointVelocity(v_des)
-
-        device.SendCommand(WaitEndOfCycle=True) # Low-Level impedance control          
+        while(tmp.time()-time_start < dt_controller ):
+            device.SendCommand(WaitEndOfCycle=True) # Low-Level impedance control          
         
         
         # Variables update  
@@ -132,13 +149,13 @@ def tsid_control(experiment=0):
         device.sample(i)
         controller.sample(i)        
         i += 1
-        t += DT
+        t += dt_controller
         
         
         
     
     #****************************************************************
-        
+    print(controller.error)
     
     ########## PLOTS ##########          
     plotAll(controller, device, t_list, experiment, Kp[0], Kd[0])

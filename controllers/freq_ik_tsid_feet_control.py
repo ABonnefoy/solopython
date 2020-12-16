@@ -107,6 +107,9 @@ class Freq_IK_TSID_Feet_Control:
         self.se3Task.useLocalFrame(False)
         self.invdyn.addMotionTask(self.se3Task, self.w_se3, self.level_se3, 0.0)
         se3_ref = self.robot.framePosition(self.invdyn.data(), self.foot_index)
+        '''target = se3_ref.translation + np.array([0.0, 0.0, 0.1])
+        se3_target = se3_ref.copy()
+        se3_target.translation = target'''
         self.trajSE3 = tsid.TrajectorySE3Constant("traj_foot", se3_ref)
         self.sampleSE3 = self.trajSE3.computeNext()
 
@@ -115,7 +118,7 @@ class Freq_IK_TSID_Feet_Control:
         self.amp                  = np.zeros(6)
         self.amp[0]               = 0.05
         self.two_pi_f             = np.zeros(6)
-        self.two_pi_f[0]          = 2*np.pi*1.0
+        self.two_pi_f[0]          = 2*np.pi*2.0
         self.two_pi_f_amp         = np.multiply(self.two_pi_f,self.amp)
         self.two_pi_f_squared_amp = np.multiply(self.two_pi_f, self.two_pi_f_amp)
 
@@ -135,13 +138,13 @@ class Freq_IK_TSID_Feet_Control:
     def low_level(self, q_mes, v_mes, Kp, Kd, i):
 
         # Safety Controller
-        for index in range(len(q_mes)):
+        '''for index in range(len(q_mes)):
             if self.error or (q_mes[index]<-3.14) or (q_mes[index]>3.14) or (v_mes[index]<-30) or (v_mes[index]>30): 
                 self.error = True
                 self.torque_des = -self.security * v_mes
                 self.t += self.DT
                 return(self.torque_des, np.zeros(self.dof), np.zeros(self.dof), q_mes, v_mes)
-     
+     '''
         # Previous Values
         q_prev = self.q_cmd.copy()
         v_prev = self.v_cmd.copy()

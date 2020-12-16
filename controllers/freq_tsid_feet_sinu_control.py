@@ -84,7 +84,7 @@ class Freq_TSID_Feet_Sinu_Control:
         self.torque_des = np.zeros(self.dof)
 
 
-	# Dynamics Problem initialization
+	    # Dynamics Problem initialization
         self.t = 0.0 # time
         self.invdyn = tsid.InverseDynamicsFormulationAccForce("tsid", self.robot, False)
         self.invdyn.computeProblemData(self.t, self.q_cmd, self.v_cmd)
@@ -106,7 +106,7 @@ class Freq_TSID_Feet_Sinu_Control:
         self.amp                  = np.zeros(6)
         self.amp[0]               = 0.05
         self.two_pi_f             = np.zeros(6)
-        self.two_pi_f[0]          = 2*np.pi*1.0
+        self.two_pi_f[0]          = 2*np.pi*2.0
         self.two_pi_f_amp         = np.multiply(self.two_pi_f,self.amp)
         self.two_pi_f_squared_amp = np.multiply(self.two_pi_f, self.two_pi_f_amp)
 
@@ -125,13 +125,15 @@ class Freq_TSID_Feet_Sinu_Control:
     def low_level(self, v_mes, q_mes, Kp, Kd, i):
 
 
-        for index in range(len(q_mes)):
+        '''for index in [2,3]:
             if self.error or (q_mes[index]<-3.14) or (q_mes[index]>3.14) or (v_mes[index]<-30) or (v_mes[index]>30): 
                 self.error = True
                 self.torque_des = -self.security * v_mes
                 self.t += self.DT
-                return(self.torque_des, np.zeros(self.dof), np.zeros(self.dof), q_mes, v_mes)
-        
+                print(i)
+                return(self.torque_des, np.zeros(self.dof), np.zeros(self.dof), q_mes, v_mes)'''
+
+
         # TSID computation        
 
         self.sampleSE3.pos(self.offset + np.multiply(self.amp, np.sin(self.two_pi_f*self.t)))
