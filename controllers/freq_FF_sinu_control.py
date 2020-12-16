@@ -67,65 +67,65 @@ class Freq_FF_Sinu_Control:
         
         
         if logSize is not None:
-            self.jointTorques_list = np.zeros((logSize,self.dof))
-            self.q_list = np.zeros((logSize,self.dof))
-            self.v_list = np.zeros((logSize,self.dof))
+            self.torque_des_list = np.zeros((logSize,self.dof))
+            self.q_cmd_list = np.zeros((logSize,self.dof))
+            self.v_cmd_list = np.zeros((logSize,self.dof))
         
         
         
-    def Init(self, qmes, vmes):
+    def Init(self, q_mes, v_mes):
         # Initial configuration
-        self.q = qmes.copy()
-        self.v = vmes.copy()
-        self.dv = np.zeros(self.dof)
-        self.jointTorques = np.zeros(self.dof)
+        self.q_cmd = q_mes.copy()
+        self.v_cmd = v_mes.copy()
+        self.dv_cmd = np.zeros(self.dof)
+        self.torque_des = np.zeros(self.dof)
         self.t = 0.0 # time
  	
-        self.safety_controller.Init(qmes, vmes)          
+        self.safety_controller.Init(q_mes, v_mes)          
 
         self.offset = np.reshape(self.q_init, 8)
         self.amp                  = np.zeros(8)
-        self.amp[0]               = self.amp_hip
-        self.amp[1]               = self.amp_knee
+        self.amp[2]               = self.amp_hip
+        self.amp[3]               = self.amp_knee
         self.two_pi_f             = np.zeros(8)
-        self.two_pi_f[0]          = 2*np.pi*self.freq_hip
-        self.two_pi_f[1]          = 2*np.pi*self.freq_knee
+        self.two_pi_f[2]          = 2*np.pi*self.freq_hip
+        self.two_pi_f[3]          = 2*np.pi*self.freq_knee
         self.two_pi_f_amp         = np.multiply(self.two_pi_f,self.amp)
         self.two_pi_f_squared_amp = np.multiply(self.two_pi_f, self.two_pi_f_amp)
 
 
 ########## LOW-LEVEL CONTROL ##########
 
-    def low_level(self, qmes, vmes, Kp, Kd, i):
+    def low_level(self, q_mes, v_mes, Kp, Kd, i):
 
-        for index in range(len(qmes)):
-            if self.error or (qmes[index]<-3.14) or (qmes[index]>3.14) or (vmes[index]<-30) or (vmes[index]>30): 
+        for index in range(len(q_mes)):
+            if self.error or (q_mes[index]<-3.14) or (q_mes[index]>3.14) or (v_mes[index]<-30) or (v_mes[index]>30): 
                 self.error = True
-                self.jointTorques = -self.security * vmes
+                self.torque_des = -self.security * v_mes
                 self.t += self.DT
-                return(self.jointTorques, np.zeros(self.dof), np.zeros(self.dof), qmes, vmes)
+                return(self.torque_des, np.zeros(self.dof), np.zeros(self.dof), q_mes, v_mes)
 
-        self.q = self.offset + np.multiply(self.amp, np.sin(self.two_pi_f*self.t))
-        self.v = np.multiply(self.two_pi_f_amp, np.cos(self.two_pi_f*self.t))
-        self.dv = np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t))
+        self.q_cmd = self.offset + np.multiply(self.amp, np.sin(self.two_pi_f*self.t))
+        self.v_cmd = np.multiply(self.two_pi_f_amp, np.cos(self.two_pi_f*self.t))
+        self.dv_cmd = np.multiply(self.two_pi_f_squared_amp, -np.sin(self.two_pi_f*self.t))
   
-        #self.jointTorques = self.invdyn.getActuatorForces(self.sol)
-        self.jointTorques = pin.rnea(self.model, self.data, qmes, vmes, self.dv)
+        #self.torque_des = self.invdyn.getActuatorForces(self.sol)
+        self.torque_des = pin.rnea(self.model, self.data, q_mes, v_mes, self.dv_cmd)
             
         self.t += self.DT
             
-        return(self.jointTorques, Kp, Kd, self.q, self.v)
+        return(self.torque_des, Kp, Kd, self.q_cmd, self.v_cmd)
     
     def sample(self, i):
-        self.jointTorques_list[i,:] = self.jointTorques[:]
-        self.q_list[i,:] = self.q[:]
-        self.v_list[i,:] = self.v[:]
+        self.torque_des_list[i,:] = self.torque_des[:]
+        self.q_cmd_list[i,:] = self.q_cmd[:]
+        self.v_cmd_list[i,:] = self.v_cmd[:]
         
     def saveAll(self, filename = "data"):
         date_str = datetime.now().strftime('_%Y_%m_%d_%H_%M')
         np.savez(filename + date_str + ".npz",
-                 q=self.q_list, 
-                 v=self.v_list,
-                 jointTorques=self.jointTorques_list)
+                 q=self.q_cmd_list, 
+                 v=self.v_cmd_list,
+                 torque_des=self.torque_des_list)
         
 

@@ -128,9 +128,9 @@ def tsid_control():
     offset               = np.zeros(6)
     offset[:3]           = se3_ref.translation
     amp                  = np.zeros(6)
-    amp[0]               = 0.1
+    amp[2]               = 0.1
     two_pi_f             = np.zeros(6)
-    two_pi_f[0]          = 2*np.pi*0.5
+    two_pi_f[2]          = 2*np.pi*0.5
     two_pi_f_amp         = np.multiply(two_pi_f,amp)
     two_pi_f_squared_amp = np.multiply(two_pi_f, two_pi_f_amp)
 
@@ -179,6 +179,7 @@ def tsid_control():
 
                 if i == 0:
                     y = sampleSE3.pos()
+                    dy = sampleSE3.vel()
         
                 HQPData = invdyn.computeProblemData(t, q_mes, v_mes)     
                 sol = solver.solve(HQPData)
@@ -190,15 +191,17 @@ def tsid_control():
                 pin.crba(model, data, q_mes)
                 J_foot = pin.computeFrameJacobian(model, data, q_prev, foot_index)
                 M = data.M
+                y_prev = y.copy()
+                dy_prev = dy.copy()
 
                 ddy = sampleSE3.acc()
                 #dv_des = invdyn.getAccelerations(sol)
-                dv_des = np.linalg.pinv(J_foot) @ ddy
+                ddy_cmd = kp_se3 * (y - y_prev) + 2.0 * np.sqrt(kp_se3) * (dy - dy_prev) + ddy
+                dv_des = np.linalg.pinv(J_foot) @ ddy_cmd
 
                 dy = sampleSE3.vel()
                 v_des = np.linalg.pinv(J_foot) @ dy
 
-                y_prev = y.copy()
                 y = sampleSE3.pos()
                 q_des = q_prev + np.linalg.pinv(J_foot) @ (y - y_prev)
 
